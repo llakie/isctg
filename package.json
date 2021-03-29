@@ -1,0 +1,17 @@
+{
+  "name": "isctg",
+  "description": "IMAP Spam Container 'To Go'",
+  "repository": {
+    "url": "https://github.com/llakie/isctg"
+  },
+  "version": "1.0.0",
+  "author": {
+    "email": "lars.kiefer@bytevalue.de",
+    "name": "Lars-Erich Kiefer"
+  },
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "imap": "^0.8.19"
+  }
+}
