@@ -287,8 +287,10 @@ class MailboxTracker {
             
             let uids = [];
             
+            const uidRange = await this.getUidRange(this.lastUid);
+
             try {
-                uids = await this.imapClient.dumpMailbox(this.mboxPath, [[ 'UID', `${await this.getUidRange(this.lastUid)}` ]], tmpMailDir);
+                uids = await this.imapClient.dumpMailbox(this.mboxPath, [[ 'UID', `${uidRange[0]}:${uidRange[1]}` ]], tmpMailDir);
             }
             catch(err) {
                 // Mailbox is emptry
@@ -296,7 +298,7 @@ class MailboxTracker {
             }
 
             try {
-                await this.process(uids, tmpMailDir);
+                await this.process(uidRange, uids, tmpMailDir);
             }
             catch(err) {
                 // Some processing error
@@ -345,10 +347,10 @@ class MailboxTracker {
     }
 
     async getUidRange(lastUid) {
-        return Promise.resolve(`${lastUid + 1}:*`);
+        return Promise.resolve([ lastUid + 1, '*' ]);
     }
 
-    async process(uids, absMailPath) {
+    async process(uidRange, uids, absMailPath) {
         throw new Error(`Not implemented yet`);
     }
 
@@ -479,7 +481,7 @@ class SpamboxTracker extends MailboxTracker {
         super(imapClient, mboxPath);
     }
 
-    async process(uids, absMailPath) {
+    async process(uidRange, uids, absMailPath) {
         await this.processAll(uids, absMailPath, this.__learnSpam.bind(this));
     }
 
@@ -494,7 +496,7 @@ class HamboxTracker extends MailboxTracker {
         super(imapClient, mboxPath);
     }
 
-    async process(uids, absMailPath) {
+    async process(uidRange, uids, absMailPath) {
         await this.processAll(uids, absMailPath, this.__learnHam.bind(this));
     }
 
@@ -518,10 +520,10 @@ class InboxTracker extends MailboxTracker {
     }
 
     async getUidRange(lastUid) {
-        return `${lastUid + 1}:${lastUid + this.batchSize}`;
+        return [ lastUid + 1, lastUid + this.batchSize ];
     }
     
-    async process(uids, absMailPath) {
+    async process(uidRange, uids, absMailPath) {
         await this.processSingle(uids, absMailPath, async (uid, absMessagePath) => {
             const score = await this.getSpamScore(absMessagePath);
             
@@ -556,7 +558,7 @@ class InboxTracker extends MailboxTracker {
         finally {
             const highestUid = await this.imapClient.getMaxUid(this.mboxPath);
             // Clamp it to the highest UID available
-            this.lastUid = Math.min(highestUid, this.lastUid + this.batchSize);
+            this.lastUid = Math.min(highestUid, uidRange[1]);
             this.__updateConfig(this.absConfigDir);
         }
     }
