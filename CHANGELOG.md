@@ -1,5 +1,9 @@
 # Changelog
 
+1.0.2
+
+- Fix mailcounter. Make it start from 1.. instead of 0..
+
 1.0.1
 
 - Fix uid range bug for inbox tracking

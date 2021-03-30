@@ -528,7 +528,7 @@ class InboxTracker extends MailboxTracker {
         await this.processSingle(uids, absMailPath, async (idx, uid, absMessagePath) => {
             const score = await this.getSpamScore(absMessagePath);
             
-            console.log(`E-Mail ${uid} (${idx}/${uids.length}) scored ${score} points`);
+            console.log(`E-Mail ${uid} (${idx + 1}/${uids.length}) scored ${score} points`);
 
             if (score >= this.minSpamScore) {
                 try {
