@@ -179,7 +179,7 @@ class ImapClient {
                                 _stream.pipe(fs.createWriteStream(path.resolve(absPath, _attrs.uid + '')));
                                 count++;
                             } else {
-                                console.log(`Mail ${_attrs.uid} exceeds max size. Expected size < ${maxBytes} Bytes. Got ${_size} Bytes. Skipping mail`);
+                                console.log(`Mail ${_attrs.uid} exceeds max size. Expected size < ${maxMailSizeInBytes} Bytes. Got ${_size} Bytes. Skipping mail`);
                                 // Remove from uids
                                 uids = uids.filter(uid => uid !== parseInt(_attrs.uid, 10));
                             }
