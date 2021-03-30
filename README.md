@@ -59,7 +59,8 @@ The image is built using `docker buildx` build system. You can also get the late
         "maxHamScore": 2.5,         // This spam score has to be lower than this value for a message to be ham
         "batchSize": 100            // Maximum amount of messages, which will be processed as a single chunk of your inbox
     },
-    "trackIntervalMs": 20000        // The infinite loop checkSpam, checkHam, checkInbox will be paused for the given amount of time
+    "trackIntervalMs": 20000,       // The infinite loop checkSpam, checkHam, checkInbox will be paused for the given amount of time
+    "maxMailSizeInBytes": 256000    // Mails exceeding this size in bytes will be ignored
   }
   ```
 
