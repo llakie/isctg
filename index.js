@@ -318,7 +318,7 @@ class MailboxTracker {
     async processSingle(uids, absMailPath, cb) {
         for (let i = 0; i < uids.length; i++) {
             try {
-                await cb(uids[i], path.resolve(absMailPath, uids[i] + ''));
+                await cb(i, uids[i], path.resolve(absMailPath, uids[i] + ''));
             }
             catch(err) {
                 console.error(err);
@@ -525,10 +525,10 @@ class InboxTracker extends MailboxTracker {
     }
     
     async process(uidRange, uids, absMailPath) {
-        await this.processSingle(uids, absMailPath, async (uid, absMessagePath) => {
+        await this.processSingle(uids, absMailPath, async (idx, uid, absMessagePath) => {
             const score = await this.getSpamScore(absMessagePath);
             
-            console.log(`E-Mail ${uid} scored ${score} points`);
+            console.log(`E-Mail ${uid} (${idx}/${uids.length}) scored ${score} points`);
 
             if (score >= this.minSpamScore) {
                 try {
