@@ -52,4 +52,6 @@ COPY index.js run.sh ./
 
 RUN chmod +x run.sh
 
+VOLUME /app/data
+
 CMD [ "./run.sh" ]
