@@ -1,5 +1,10 @@
 # Changelog
 
+1.0.3
+
+- Prevent mails from being learned as ham, if the spam score calculation failed
+- Fix an assignment error in the openMailbox function
+
 1.0.2
 
 - Fix mailcounter. Make it start from 1.. instead of 0..

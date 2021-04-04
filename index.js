@@ -83,12 +83,9 @@ class ImapClient {
         return this.__getClient()
             .then(client => {
                 if (client.__box) {
-                    if (client.__box.name === mailbox) {
-                        // Already opened --> internal API used
-                        return;
+                    if (client.__box.name !== mailbox) {
+                        return this.closeMailbox().then(() => client);
                     }
-                    
-                    return this.closeMailbox().then(() => client);
                 }
 
                 return client;
@@ -364,7 +361,6 @@ class MailboxTracker {
     }
 
     async getSpamScore(absMailPath) {
-        // Wenn score kleiner als 2 >> in ham kopieren zum Lernen
         return this.__spawnProcess(
             'spamc',
             [ '-c' ],
@@ -383,11 +379,18 @@ class MailboxTracker {
             const matches = /^([0-9\.]+)\/([0-9\.]+).*/.exec(response.stdout.trim());
 
             if (matches === null) {
-                return 0;
+                return -1;
             }
 
-            return parseFloat(matches[1]);
-        })
+            const score = parseFloat(matches[1]);
+            const requiredScore = parseFloat(matches[2]);
+
+            if (score === 0 && requiredScore === 0) {
+                return -1;
+            }
+
+            return score;
+        });
     }
 
     getId() {
@@ -540,8 +543,9 @@ class InboxTracker extends MailboxTracker {
                 catch(err) {
                     console.error(err);
                 }
-            } else if (score > this.maxHamScore) {
+            } else if (score > this.maxHamScore || score === -1) {
                 // Mails, where we are uncertain, are not taken for learning ham
+                // Mails where an error ocurred during calculating the score (-score = 1)
                 fs.unlinkSync(absMessagePath);
             }
         });
