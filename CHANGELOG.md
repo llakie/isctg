@@ -1,5 +1,11 @@
 # Changelog
 
+1.1.0
+
+- Support batch size for Spam- and Ham-Box
+- Add default config
+- Add log output to facilitate debugging
+
 1.0.3
 
 - Prevent mails from being learned as ham, if the spam score calculation failed

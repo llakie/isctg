@@ -257,10 +257,15 @@ class ImapClient {
 
 class MailboxTracker {
     // Saves next uid and sees if that changed. If yes, get Mails from there:* and call async callback for each message
-    constructor(imapClient, mboxPath, maxMailSizeInBytes, absConfigDir = path.resolve(__dirname, 'data')) {
+    constructor(imapClient, mboxPath, maxMailSizeInBytes, batchSize = 500, absConfigDir = path.resolve(__dirname, 'data')) {
+        if (mboxPath === undefined || mboxPath.trim() === '') {
+            throw new Error(`Mailbox path needs to be defined`);
+        }
+        
         this.mboxPath = mboxPath;
         this.imapClient = imapClient;
         this.absConfigDir = absConfigDir;
+        this.batchSize = batchSize;
         this.maxMailSizeInBytes = maxMailSizeInBytes;
         this.config = null;
         
@@ -303,8 +308,17 @@ class MailboxTracker {
                 console.error(err.message);
             }
             finally {
+                // Clamp the last Uid with the maximum UID currently available
+                this.lastUid = Math.min(uidRange[1], uidRange[2]);
+                
+                console.log(`Last uid for ${this.mboxPath} set to ${this.lastUid}`);
+                
+                this.__updateConfig(this.absConfigDir);
+                
                 // Remove the tmp directory completly
                 fs.rmdirSync(tmpMailDir, { recursive: true });
+
+                console.log(`Removed tmp dir ${tmpMailDir}`);
             }
         }
         catch(err) {
@@ -345,7 +359,8 @@ class MailboxTracker {
     }
 
     async getUidRange(lastUid) {
-        return Promise.resolve([ lastUid + 1, '*' ]);
+        const highestUid = await this.imapClient.getMaxUid(this.mboxPath);
+        return [ lastUid + 1, lastUid + this.batchSize, highestUid ];
     }
 
     async process(uidRange, uids, absMailPath) {
@@ -423,6 +438,8 @@ class MailboxTracker {
                 }
 
                 numProcessed += data.split('.').length - 1;
+                // Clamp number of processed E-Mails to total count
+                numProcessed = Math.min(numProcessed, numTotal);
                 console.log(`${Math.floor((numProcessed * 100) / numTotal)}% (${numProcessed}/${numTotal})`);
             }
         );
@@ -481,40 +498,43 @@ class MailboxTracker {
 }
 
 class SpamboxTracker extends MailboxTracker {
-    constructor(imapClient, mboxPath, maxMailSizeInBytes) {
-        super(imapClient, mboxPath, maxMailSizeInBytes);
+    constructor(imapClient, mboxPath, maxMailSizeInBytes, batchSize) {
+        super(imapClient, mboxPath, maxMailSizeInBytes, batchSize);
+        this.done = false;
     }
 
     async process(uidRange, uids, absMailPath) {
         await this.processAll(uids, absMailPath, this.__learnSpam.bind(this));
+        this.done = this.lastUid === uidRange[2];
     }
 
     async __learnSpam(uids, absMailPath) {
         const response = await this.learnSpam(absMailPath);
-        console.log(response.stdout);
+        console.log(response.stdout.trim());
     }
 }
 
 class HamboxTracker extends MailboxTracker {
-    constructor(imapClient, mboxPath, maxMailSizeInBytes) {
-        super(imapClient, mboxPath, maxMailSizeInBytes);
+    constructor(imapClient, mboxPath, maxMailSizeInBytes, batchSize) {
+        super(imapClient, mboxPath, maxMailSizeInBytes, batchSize);
+        this.done = false;
     }
 
     async process(uidRange, uids, absMailPath) {
         await this.processAll(uids, absMailPath, this.__learnHam.bind(this));
+        this.done = this.lastUid === uidRange[2];
     }
 
     async __learnHam(uids, absMailPath) {
         const response = await this.learnHam(absMailPath);
-        console.log(response.stdout);
+        console.log(response.stdout.trim());
     }
 }
 
 class InboxTracker extends MailboxTracker {
     constructor(imapClient, mboxPath, spamMboxPath, batchSize = 25, minSpamScore = 5, maxHamScore = 2.5, maxMailSizeInBytes) {
-        super(imapClient, mboxPath, maxMailSizeInBytes);
+        super(imapClient, mboxPath, maxMailSizeInBytes, batchSize);
         this.spamMboxPath = spamMboxPath;
-        this.batchSize = batchSize;
         this.minSpamScore = minSpamScore;
         this.maxHamScore = maxHamScore;
 
@@ -523,10 +543,6 @@ class InboxTracker extends MailboxTracker {
         }
     }
 
-    async getUidRange(lastUid) {
-        return [ lastUid + 1, lastUid + this.batchSize ];
-    }
-    
     async process(uidRange, uids, absMailPath) {
         await this.processSingle(uids, absMailPath, async (idx, uid, absMessagePath) => {
             const score = await this.getSpamScore(absMessagePath);
@@ -544,8 +560,12 @@ class InboxTracker extends MailboxTracker {
                     console.error(err);
                 }
             } else if (score > this.maxHamScore || score === -1) {
+                if (score === -1) {
+                    // Mails where an error ocurred during calculating the score (-score = 1)
+                    console.log(`Could not calculate spam score for E-Mail ${uid}`);
+                }
+                
                 // Mails, where we are uncertain, are not taken for learning ham
-                // Mails where an error ocurred during calculating the score (-score = 1)
                 fs.unlinkSync(absMessagePath);
             }
         });
@@ -560,32 +580,49 @@ class InboxTracker extends MailboxTracker {
         catch(err) {
             console.error(err.message);
         }
-        finally {
-            const highestUid = await this.imapClient.getMaxUid(this.mboxPath);
-            // Clamp it to the highest UID available
-            this.lastUid = Math.min(highestUid, uidRange[1]);
-            this.__updateConfig(this.absConfigDir);
-        }
     }
 }
 
 class AccountTracker {
     constructor(config) {
-        this.config = config;
+        this.config = Object.assign(
+            {
+                imap: {
+                    port: 993,
+                    tls: true,
+                    keepalive: true
+                },
+                paths: {
+                    ham: '',
+                    spam: '',
+                    inbox: 'INBOX'
+                },
+                spamassassin: {
+                    minSpamScore: 5,
+                    maxHamScore: 2.5,
+                    batchSize: 250
+                },
+                trackIntervalMs: 20000,
+                maxMailSizeInBytes: 256000
+            },
+            config
+        );
 
         const maxMailSizeInBytes = this.config.maxMailSizeInBytes || 256000;
 
+        const batchSize = Math.max(25, this.config.spamassassin.batchSize);
+
         this.imapClient = new ImapClient(config.imap);
 
-        this.spamTracker = new SpamboxTracker(this.imapClient, this.config.paths.spam, maxMailSizeInBytes);
+        this.spamTracker = new SpamboxTracker(this.imapClient, this.config.paths.spam, maxMailSizeInBytes, batchSize);
 
-        this.hamTracker = new HamboxTracker(this.imapClient, this.config.paths.ham, maxMailSizeInBytes);
+        this.hamTracker = new HamboxTracker(this.imapClient, this.config.paths.ham, maxMailSizeInBytes, batchSize);
 
         this.inboxTracker = new InboxTracker(
             this.imapClient,
             this.config.paths.inbox,
             this.config.paths.spam,
-            this.config.spamassassin.batchSize,
+            batchSize,
             this.config.spamassassin.minSpamScore,
             this.config.spamassassin.maxHamScore,
             maxMailSizeInBytes
@@ -596,7 +633,17 @@ class AccountTracker {
         while(true) {
             try {
                 await this.spamTracker.track();
+
+                if (!this.spamTracker.done) {
+                    continue;
+                }
+
                 await this.hamTracker.track();
+
+                if (!this.hamTracker.done) {
+                    continue;
+                }
+
                 await this.inboxTracker.track();
                 await new Promise(resolve => setTimeout(resolve, this.config.trackIntervalMs));
             }
