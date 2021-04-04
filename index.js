@@ -537,6 +537,7 @@ class InboxTracker extends MailboxTracker {
         this.spamMboxPath = spamMboxPath;
         this.minSpamScore = minSpamScore;
         this.maxHamScore = maxHamScore;
+        this.done = false;
 
         if (this.minSpamScore <= this.maxHamScore) {
             throw new Error('Min spam score must be greater than max ham score');
@@ -580,6 +581,8 @@ class InboxTracker extends MailboxTracker {
         catch(err) {
             console.error(err.message);
         }
+
+        this.done = this.lastUid === uidRange[2];
     }
 }
 
@@ -645,7 +648,10 @@ class AccountTracker {
                 }
 
                 await this.inboxTracker.track();
-                await new Promise(resolve => setTimeout(resolve, this.config.trackIntervalMs));
+
+                if (this.inboxTracker.done) {
+                    await new Promise(resolve => setTimeout(resolve, this.config.trackIntervalMs));
+                }
             }
             catch(err) {
                 console.error(err.message);

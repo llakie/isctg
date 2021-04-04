@@ -1,5 +1,9 @@
 # Changelog
 
+1.1.1
+
+- Do not wait for changes in Inbox, if not all mails were already scanned
+
 1.1.0
 
 - Support batch size for Spam- and Ham-Box
