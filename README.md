@@ -47,7 +47,8 @@ The image is built using `docker buildx` build system. You can also get the late
         "user": "",
         "password": "",
         "tls": true,
-        "keepalive": true
+        "keepalive": true,
+        "reconnectAfterMs": 300000  // Reconnection interval in ms
     },
     "paths": {                      // Specify the full paths to the folders
         "inbox": "INBOX",           // Your mail inbox

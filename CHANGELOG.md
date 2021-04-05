@@ -1,5 +1,10 @@
 # Changelog
 
+1.2.0
+
+- Add automatic reconnection option
+- Do not update the uid, if the processing failed due to some reason
+
 1.1.1
 
 - Do not wait for changes in Inbox, if not all mails were already scanned

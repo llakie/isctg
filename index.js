@@ -9,6 +9,7 @@ class ImapClient {
     constructor(config) {
         this.config = config;
         this.imap = null;
+        this.reconnectAtMs = this.__getReconnectionTimeoutMs();
     }
 
     connect() {
@@ -20,6 +21,7 @@ class ImapClient {
 
         return new Promise((resolve, reject) => {
             this.imap.once('ready', () => {
+                this.reconnectAtMs = this.__getReconnectionTimeoutMs();
                 this.imap.off('error', reject);
                 this.imap.on('error', this.__onImapError.bind(this));
                 resolve(this.imap);
@@ -42,6 +44,8 @@ class ImapClient {
         }
 
         this.imap.destroy();
+
+        this.imap = null;
     }
 
     getMailboxPaths() {
@@ -239,14 +243,22 @@ class ImapClient {
         return crypto.createHash('md5').update(data).digest('hex');
     }
 
-    __onImapError(err) {
-        // Terminate connection immediately
-        this.imap.destroy();
-        // Force reconnect
-        this.imap = null;
+    __getReconnectionTimeoutMs(now = Date.now()) {
+        // Reconnection timeout is clamped to a minimum of 5 minutes
+        return now + Math.max(300000, this.config.reconnectAfterMs || 300000);
     }
 
-    __getClient() {
+    __onImapError(err) {
+        console.error(err);
+        this.disconnect(false);
+    }
+
+    __getClient(now = Date.now()) {
+        if (this.reconnectAtMs < now) {
+            console.log(`Automatic reconnect after ${this.config.reconnectAfterMs}ms`);
+            this.disconnect(false);
+        }
+        
         if (this.imap !== null && this.imap.state !== 'disconnected') {
             return Promise.resolve(this.imap);
         }
@@ -302,22 +314,21 @@ class MailboxTracker {
 
             try {
                 await this.process(uidRange, uids, tmpMailDir);
-            }
-            catch(err) {
-                // Some processing error
-                console.error(err.message);
-            }
-            finally {
+            
                 // Clamp the last Uid with the maximum UID currently available
                 this.lastUid = Math.min(uidRange[1], uidRange[2]);
                 
                 console.log(`Last uid for ${this.mboxPath} set to ${this.lastUid}`);
                 
                 this.__updateConfig(this.absConfigDir);
-                
+            }
+            catch(err) {
+                // Some processing error
+                console.error(err.message);
+            }
+            finally {
                 // Remove the tmp directory completly
                 fs.rmdirSync(tmpMailDir, { recursive: true });
-
                 console.log(`Removed tmp dir ${tmpMailDir}`);
             }
         }
@@ -593,7 +604,8 @@ class AccountTracker {
                 imap: {
                     port: 993,
                     tls: true,
-                    keepalive: true
+                    keepalive: true,
+                    reconnectAfterMs: 180000
                 },
                 paths: {
                     ham: '',
