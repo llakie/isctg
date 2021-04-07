@@ -1,5 +1,9 @@
 # Changelog
 
+1.3.1
+
+- Persist mails from Inbox which are not parsable
+
 1.3.0
 
 - Output mail header and date when processing mails

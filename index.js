@@ -559,6 +559,34 @@ class InboxTracker extends MailboxTracker {
         }
     }
 
+    persistMail(absMessagePath, maxFileCount = 10, dirPrefix = 'mails') {
+        const absPersistenceDir = path.resolve(__dirname, 'data', dirPrefix);
+
+        if (!fs.existsSync(absPersistenceDir)) {
+            console.log(`Create E-Mail persistence dir ${absPersistenceDir}`);
+            fs.mkdirSync(absPersistenceDir, { recursive: true });
+        }
+
+        if (!fs.statSync(absPersistenceDir).isDirectory()) {
+            console.error(`Persistence directory ${absPersistenceDir} is not a directory`);
+        }
+
+        const absOutMailPath = path.resolve(absPersistenceDir, `${Date.now()}`);
+
+        // Persist the given file
+        console.log(`Persist given E-Mail at ${absOutMailPath}`);
+        fs.copyFileSync(absMessagePath, absOutMailPath);
+
+        // Sorted filenames from oldest to newest
+        const fileNames = fs.readdirSync(absPersistenceDir).map(fileName => parseInt(fileName, 10)).sort((a, b) => a - b);
+
+        while(fileNames.length > maxFileCount) {
+            const absRemoveMailPath = path.resolve(absPersistenceDir, `${fileNames.shift()}`);
+            console.log(`Remove ${absRemoveMailPath}`);
+            fs.unlinkSync(absRemoveMailPath);
+        }
+    }
+
     async process(uidRange, uids, absMailPath) {
         await this.processSingle(uids, absMailPath, async (idx, uid, absMessagePath) => {
             console.log(`Processing E-Mail ${idx + 1}/${uids.length} [${uid}]...`)
@@ -570,6 +598,7 @@ class InboxTracker extends MailboxTracker {
             }
             catch(err) {
                 console.log(`├ Cannot parse E-Mail headers`);
+                this.persistMail(absMessagePath);
             }
 
             const score = await this.getSpamScore(absMessagePath);
