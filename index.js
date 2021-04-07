@@ -180,7 +180,7 @@ class ImapClient {
                                 _stream.pipe(fs.createWriteStream(path.resolve(absPath, _attrs.uid + '')));
                                 count++;
                             } else {
-                                console.log(`Mail ${_attrs.uid} exceeds max size. Expected size < ${maxMailSizeInBytes} Bytes. Got ${_size} Bytes. Skipping mail`);
+                                console.log(`Mail [${_attrs.uid}] exceeds max size. Expected size < ${maxMailSizeInBytes} Bytes. Got ${_size} Bytes. Skipping mail`);
                                 // Remove from uids
                                 uids = uids.filter(uid => uid !== parseInt(_attrs.uid, 10));
                             }
@@ -318,7 +318,7 @@ class MailboxTracker {
                 // Clamp the last Uid with the maximum UID currently available
                 this.lastUid = Math.min(uidRange[1], uidRange[2]);
                 
-                console.log(`Last uid for ${this.mboxPath} set to ${this.lastUid}`);
+                console.log(`Last uid for ${this.mboxPath} set to [${this.lastUid}]`);
                 
                 this.__updateConfig(this.absConfigDir);
             }
@@ -425,6 +425,10 @@ class MailboxTracker {
 
     onError(err) {
         console.error(err.message);
+    }
+
+    parseMailHeaderFromFile(absMailPath) {
+        return Imap.parseHeader(fs.readFileSync(absMailPath, { encoding: 'utf8' }));
     }
 
     async __saLearn(absMailPath, saLearnType) {
@@ -557,13 +561,24 @@ class InboxTracker extends MailboxTracker {
 
     async process(uidRange, uids, absMailPath) {
         await this.processSingle(uids, absMailPath, async (idx, uid, absMessagePath) => {
+            console.log(`Processing E-Mail ${idx + 1}/${uids.length} [${uid}]...`)
+
+            try {
+                const headers = this.parseMailHeaderFromFile(absMessagePath);
+                console.log(`├ Subject = ${headers.subject.join(', ')}`);
+                console.log(`├ Date = ${headers.date.join(', ')}`);
+            }
+            catch(err) {
+                console.log(`├ Cannot parse E-Mail headers`);
+            }
+
             const score = await this.getSpamScore(absMessagePath);
-            
-            console.log(`E-Mail ${uid} (${idx + 1}/${uids.length}) scored ${score} points`);
+
+            console.log(`├ Score = ${score}`);
 
             if (score >= this.minSpamScore) {
                 try {
-                    console.log(`Move mail ${uid} to ${this.spamMboxPath}...`)
+                    console.log(`└ Score exceeds min spam score ${this.minSpamScore}. Move to ${this.spamMboxPath}`)
                     await this.imapClient.moveMails(this.mboxPath, uid, this.spamMboxPath);
                     // Delete spam mail
                     fs.unlinkSync(absMessagePath);
@@ -574,15 +589,19 @@ class InboxTracker extends MailboxTracker {
             } else if (score > this.maxHamScore || score === -1) {
                 if (score === -1) {
                     // Mails where an error ocurred during calculating the score (-score = 1)
-                    console.log(`Could not calculate spam score for E-Mail ${uid}`);
+                    console.log(`└ Could not calculate spam score`);
+                } else {
+                    console.log(`└ Score exceeds max ham score ${this.maxHamScore}`);
                 }
                 
                 // Mails, where we are uncertain, are not taken for learning ham
                 fs.unlinkSync(absMessagePath);
+            } else {
+                console.log(`└ Learn as ham`);
             }
         });
 
-        // Otherwise learn Ham
+        // Otherwise learn ham
         try {
             if (uids.length > 0) {
                 // If there were actually uids

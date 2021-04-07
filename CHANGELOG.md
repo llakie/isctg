@@ -1,5 +1,10 @@
 # Changelog
 
+1.3.0
+
+- Output mail header and date when processing mails
+- Group mail processing output as tree
+
 1.2.0
 
 - Add automatic reconnection option
