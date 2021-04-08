@@ -1,5 +1,9 @@
 # Changelog
 
+1.3.2
+
+- Await end of file writeStream to make sure the file is written successfully
+
 1.3.1
 
 - Persist mails from Inbox which are not parsable

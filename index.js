@@ -160,7 +160,7 @@ class ImapClient {
 
                     let count = 0;
 
-                    fetch.on('message', async (msg, seqno) => {
+                    fetch.on('message', (msg, seqno) => {
                         let _attrs = null;
                         let _stream = null;
                         let _size = 0;
@@ -174,13 +174,24 @@ class ImapClient {
                             _size = info.size;
                         });
                         
-                        msg.once('end', () => {
+                        msg.once('end', async () => {
                             if (_size <= maxMailSizeInBytes) {
                                 // Filename resembles the uid of the message
-                                _stream.pipe(fs.createWriteStream(path.resolve(absPath, _attrs.uid + '')));
-                                count++;
+                                try {
+                                    await new Promise((resolve, reject) => {
+                                        const outFileStream = fs.createWriteStream(path.resolve(absPath, _attrs.uid + ''), { autoClose: true });
+                                        outFileStream.on('finish', resolve);
+                                        outFileStream.on('error', reject);
+                                        _stream.pipe(outFileStream);
+                                    });
+
+                                    count++;
+                                } catch(err) {
+                                    console.error(`Could not dump E-Mail [${_attrs.uid}]`);
+                                    console.error(err);
+                                }
                             } else {
-                                console.log(`Mail [${_attrs.uid}] exceeds max size. Expected size < ${maxMailSizeInBytes} Bytes. Got ${_size} Bytes. Skipping mail`);
+                                console.log(`E-Mail [${_attrs.uid}] exceeds max size. Expected size < ${maxMailSizeInBytes} Bytes. Got ${_size} Bytes. Skipping mail`);
                                 // Remove from uids
                                 uids = uids.filter(uid => uid !== parseInt(_attrs.uid, 10));
                             }
