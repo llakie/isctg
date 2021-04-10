@@ -1,5 +1,14 @@
 # Changelog
 
+1.4.0
+
+- Add local DNS server (unbound) to fix problem of being blocked for DNS Blacklist requests made from public DNS servers
+- Fix configuration, to use bayes-db for spam detection
+- Automatically update rulesets using _mailbox.org_ rules on container startup
+- Disable user configurations for SpamAssassin
+- Enable debug output to _/var/log/mail.log_
+- Add SpamAssassin PlugIn "fromreplyto"
+
 1.3.3
 
 - Fix and refactor mailbox dumping method, because it somehow failed to dump mails after a certain time

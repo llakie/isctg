@@ -32,6 +32,7 @@ The image is built using `docker buildx` build system. You can also get the late
   
   ```text
   <data dir>
+  |- resolv.conf (optional)
   L- config.json
   ```
 
@@ -65,6 +66,8 @@ The image is built using `docker buildx` build system. You can also get the late
   }
   ```
 
-- `docker run --rm -v <path to data dir>:/app/data isctg:latest`<br>
+- `docker run --dns=127.0.0.1 --rm -v <path to data dir>:/app/data isctg:latest`<br>
   OR<br>
-  `docker run --rm -v <path to data dir>:/app/data llakie/isctg:latest`
+  `docker run --dns=127.0.0.1 --rm -v <path to data dir>:/app/data llakie/isctg:latest`
+
+If you cannot specify the dns here, add the resolv.conf from _./docker/etc_ to your `<data-dir>` and add another volume to your docker run command `-v <path to data dir>/resolv.conf:/etc/resolv.conf`

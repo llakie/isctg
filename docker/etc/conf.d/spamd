@@ -1,1 +1,1 @@
-command_args="--allow-tell --max-children 5"
+command_args="--allow-tell --max-children 5 --debug --nouser-config"
