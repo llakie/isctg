@@ -1,5 +1,10 @@
 # Changelog
 
+1.3.3
+
+- Fix and refactor mailbox dumping method, because it somehow failed to dump mails after a certain time
+- Remove persistence of non-parsable mails introduced in 1.3.1
+
 1.3.2
 
 - Await end of file writeStream to make sure the file is written successfully

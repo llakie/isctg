@@ -141,10 +141,10 @@ class ImapClient {
                     });
                 });
             })
-            .then(uids => this.dumpMails(mboxPath, uids, absPath, maxMailSizeInBytes));
+            .then(uids => this.dumpMessages(mboxPath, uids, absPath, maxMailSizeInBytes));
     }
 
-    dumpMails(mboxPath, uids, absPath, maxMailSizeInBytes = 256000) {
+    dumpMessages(mboxPath, uids, absPath, maxMessageSizeInBytes = 256000) {
         if (!fs.existsSync(absPath)) {
             fs.mkdirSync(absPath);
         }
@@ -158,56 +158,94 @@ class ImapClient {
                 return new Promise((resolve, reject) => {
                     const fetch = this.imap.fetch(uids, { bodies: '' });
 
-                    let count = 0;
-
-                    fetch.on('message', (msg, seqno) => {
-                        let _attrs = null;
-                        let _stream = null;
-                        let _size = 0;
-
-                        msg.once('attributes', attrs => {
-                            _attrs = attrs;
-                        });
-                        
-                        msg.on('body', (stream, info) => {
-                            _stream = stream;
-                            _size = info.size;
-                        });
-                        
-                        msg.once('end', async () => {
-                            if (_size <= maxMailSizeInBytes) {
-                                // Filename resembles the uid of the message
-                                try {
-                                    await new Promise((resolve, reject) => {
-                                        const outFileStream = fs.createWriteStream(path.resolve(absPath, _attrs.uid + ''), { autoClose: true });
-                                        outFileStream.on('finish', resolve);
-                                        outFileStream.on('error', reject);
-                                        _stream.pipe(outFileStream);
-                                    });
-
-                                    count++;
-                                } catch(err) {
-                                    console.error(`Could not dump E-Mail [${_attrs.uid}]`);
-                                    console.error(err);
-                                }
-                            } else {
-                                console.log(`E-Mail [${_attrs.uid}] exceeds max size. Expected size < ${maxMailSizeInBytes} Bytes. Got ${_size} Bytes. Skipping mail`);
-                                // Remove from uids
-                                uids = uids.filter(uid => uid !== parseInt(_attrs.uid, 10));
-                            }
-                        });
+                    let processing = 0;
+                    
+                    fetch.on('message', async message => {
+                        try {
+                            processing++;
+                            const uid = await this.__dumpMessage(message, absPath, maxMessageSizeInBytes);
+                            console.log(`Sucessfully dumped E-Mail [${uid}]`);
+                        }
+                        catch(rejectedUid) {
+                            uids = uids.filter(uid => uid !== rejectedUid);
+                        }
+                        finally {
+                            processing--;
+                        }
                     });
         
                     fetch.once('error', err => {
+                        fetch.removeAllListeners('message');
+                        fetch.removeAllListeners('end');
                         reject(err);
                     });
-                    
-                    fetch.once('end', () => {
-                        console.log(`Dumped ${count} message(s)`);
+
+                    fetch.once('end', async () => {
+                        while (processing > 0) {
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+                        console.log(`Dumped ${uids.length} message(s)`);
                         resolve(uids);
                     });
                 });
             });
+    }
+
+    async __dumpMessage(message, absPath, maxMessageSizeInBytes) {
+        return new Promise((resolve, reject) => {
+            let _attrs = null;
+            let _stream = null;
+            let _info = null;
+            
+            message.once('attributes', attrs => {
+                _attrs = attrs;
+            });
+
+            message.on('body', async (stream, info) => {
+                _info = info;
+                _stream = stream;
+            });
+
+            message.on('end', async () => {
+                const numericUid = parseInt(_attrs.uid, 10);
+
+                if (_info.size > maxMessageSizeInBytes) {
+                    console.log(`E-Mail [${numericUid}] exceeds max size. Expected size < ${this.__formatFileSize(maxMessageSizeInBytes)}. Got ${this.__formatFileSize(_info.size)}. Skipping E-Mail`);
+                    reject(numericUid);
+                    return;
+                }
+                
+                console.log(`E-Mail [${numericUid}] size accepted. Got ${this.__formatFileSize(_info.size)}`);
+                
+                try {
+                    const buffer = await this.__readStreamAsync(_stream);
+                    console.log(`Buffer size for E-Mail [${numericUid}] is ${this.__formatFileSize(Buffer.byteLength(buffer, 'utf8'))}`);
+                    fs.writeFileSync(path.resolve(absPath, numericUid + ''), buffer);
+                    resolve(numericUid);
+                } catch(err) {
+                    console.error(err);
+                    reject(numericUid);
+                }
+            });
+        });
+    }
+
+    __readStreamAsync(stream) {
+        return new Promise((resolve, reject) => {
+            let buffer = '';
+            
+            stream.on('data', (chunk) => {
+                buffer += chunk.toString('utf8');
+            });
+
+            stream.once('end', () => {
+                resolve(buffer);
+            });
+
+            stream.once('error', err => {
+                reject(err);
+            });
+        });
     }
 
     moveMails(mboxPath, uids, targetMboxPath) {
@@ -275,6 +313,20 @@ class ImapClient {
         }
 
         return this.connect(this.config);
+    }
+
+    __formatFileSize(bytes) {
+        if (bytes > 1048576) {
+            // Greater than 1 MB
+            return `${Math.round((bytes * 100) / 1048576) / 100} MiB`;
+        }
+
+        if (bytes > 1024) {
+            // Greater than 1 kiB
+            return `${Math.round((bytes * 100) / 1024) / 100} kiB`;
+        }
+
+        return `${bytes} Bytes`;
     }
 }
 
@@ -570,34 +622,6 @@ class InboxTracker extends MailboxTracker {
         }
     }
 
-    persistMail(absMessagePath, maxFileCount = 10, dirPrefix = 'mails') {
-        const absPersistenceDir = path.resolve(__dirname, 'data', dirPrefix);
-
-        if (!fs.existsSync(absPersistenceDir)) {
-            console.log(`Create E-Mail persistence dir ${absPersistenceDir}`);
-            fs.mkdirSync(absPersistenceDir, { recursive: true });
-        }
-
-        if (!fs.statSync(absPersistenceDir).isDirectory()) {
-            console.error(`Persistence directory ${absPersistenceDir} is not a directory`);
-        }
-
-        const absOutMailPath = path.resolve(absPersistenceDir, `${Date.now()}`);
-
-        // Persist the given file
-        console.log(`Persist given E-Mail at ${absOutMailPath}`);
-        fs.copyFileSync(absMessagePath, absOutMailPath);
-
-        // Sorted filenames from oldest to newest
-        const fileNames = fs.readdirSync(absPersistenceDir).map(fileName => parseInt(fileName, 10)).sort((a, b) => a - b);
-
-        while(fileNames.length > maxFileCount) {
-            const absRemoveMailPath = path.resolve(absPersistenceDir, `${fileNames.shift()}`);
-            console.log(`Remove ${absRemoveMailPath}`);
-            fs.unlinkSync(absRemoveMailPath);
-        }
-    }
-
     async process(uidRange, uids, absMailPath) {
         await this.processSingle(uids, absMailPath, async (idx, uid, absMessagePath) => {
             console.log(`Processing E-Mail ${idx + 1}/${uids.length} [${uid}]...`)
@@ -609,7 +633,6 @@ class InboxTracker extends MailboxTracker {
             }
             catch(err) {
                 console.log(`├ Cannot parse E-Mail headers`);
-                this.persistMail(absMessagePath);
             }
 
             const score = await this.getSpamScore(absMessagePath);
